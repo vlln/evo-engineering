@@ -1,0 +1,12 @@
+# evo-engineering profile bundle patch (declared by `dsh.bundle.patch`):
+# inserts the evo-engineering row into any profile that lists
+# @dsh-external/evo-engineering in its `dsh.profile.bundles`.
+#
+# Runtime requirement: the `workflows` service (official workflow engine,
+# @deepseek-ai/dsh-workflow) must be provided by the profile composition —
+# the tools report an actionable error when invoked without a provider,
+# keeping the profile bootable.
+
+- insert:
+    - id: evo-engineering
+      name: '@dsh-external/evo-engineering'

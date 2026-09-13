@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+examples/*/.evo-workspace/
+examples/*.evo-workspace/
+examples/*/runs/
