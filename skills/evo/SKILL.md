@@ -132,7 +132,10 @@ metadata:
 ### Stage 6 — Commit（记账 + 打点）
 - ledger 追加一节（模板见 `$_S/assets/ledger-template.md`）：回合号、提议数、
   各候选分数、入选者、needsHuman 原因。needsHuman 的回合也记（记录事实，供回溯）。
-- `git add -A && git commit -m "evo: round N" && git tag evo/round-N`。
+- `git add -A -- <工作区相对路径>` → `git commit -m "evo: round N" --only -- <工作区相对路径>` → `git tag <tag>`。
+  **路径必须限定到本工作区**：工作区嵌在宿主仓库里时，裸 `git add -A` 会把宿主的无关改动
+  （乃至别人的整个未跟踪工作树）扫进这一条提交——真实事故里一次提交扫进 1,105 个文件，
+  其中仅 18% 属于本工作区。tag 命名与回滚的完整规则见 `references/anti-degradation.md` §3。
 - **检查点**：ledger 可读；`git tag` 列表含本圈（或明确告知 git 不可用）。
 
 一轮到此结束。**汇报 → 问用户下一步**（下一圈 / 调标准 / 停）。别自己一直跑。
@@ -151,8 +154,9 @@ metadata:
    分数是代理指标，所以还要规则 2。
 2. **回归账本**：`evals/regression.md` 记录必须保持的行为，每圈对胜者重跑。
    分数升但回归挂 = 出了"看起来更好、实际弄坏旧功能"的退化——必须人复核。
-3. **每圈打点**：git tag `evo/round-N`，随时 `git reset --hard evo/round-N` 回滚。
-   没有 git 就没有回滚，告知用户并建议先解决。
+3. **每圈打点**：git tag（工作区即仓库根 → `evo/round-N`；嵌套 → `evo/<工作区名>/round-N`），
+   随时回滚。**嵌套工作区不许用 `git reset --hard`**（会丢掉宿主仓库的全部未提交改动），
+   改用 `git checkout <tag> -- <工作区相对路径>`。没有 git 就没有回滚，告知用户并建议先解决。
 完整机制、边界与预算见 `references/anti-degradation.md`。
 
 ## 人类门禁（默认辅助式，不是全自动）
@@ -213,7 +217,9 @@ L2 偶尔；L3/L4 是工程行为。细节见 `references/rsi-ladder.md`。
 ## 收尾检查清单（每圈结束核对）
 
 - [ ] ledger 追加了本圈记录（含分数/入选者/needsHuman 原因）
-- [ ] git tag `evo/round-N` 存在（或明确说明 git 不可用）
+- [ ] git tag 存在（工作区即仓库根 → `evo/round-N`；嵌套 → `evo/<工作区名>/round-N`），
+      或明确说明 git 不可用
+- [ ] checkpoint 提交**只包含本工作区**（`git show --name-only HEAD` 不含宿主仓库的无关路径）
 - [ ] 每个候选目录有 CHANGELOG.md；critic 尽量落了 verdict-*.json
 - [ ] baseline/ 未被改动（抽查）
 - [ ] 标准未被 agent 私改（diff 一下 evals/）

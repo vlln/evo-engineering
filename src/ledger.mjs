@@ -52,7 +52,9 @@ export function ledgerHeader() {
 }
 
 const ROUND_RE = /^## Round (\d+) — (\d{4}-\d{2}-\d{2})/gm
-const SELECTED_RE = /^- selected: (runs\/\d+\/candidate-\d+) \(([\d.]+)\)/m
+// 路径可能是**绝对**的（实测：子代理按自己的 cwd 写，报绝对路径）。
+// 只认相对路径会让 selected 读成 null ⇒ 下一圈 championScore=0 ⇒ **冠军每圈丢失、永不累积**。
+const SELECTED_RE = /^- selected: (?:none|(.+?) \(([\d.]+)\))\s*$/m
 const NEEDS_HUMAN_RE = /^- needsHuman: (true|false)/m
 
 /** 解析 ledger 文本为条目数组（旧到新）。 */
@@ -71,7 +73,7 @@ export function parseLedger(text) {
     entries.push({
       round: start.round,
       date: start.date,
-      selected: sel === null ? null : { candidateDir: sel[1], score: Number(sel[2]) },
+      selected: (sel === null || sel[1] === undefined) ? null : { candidateDir: sel[1].trim(), score: Number(sel[2]) },
       needsHuman: nh !== null && nh[1] === 'true',
       regressionFailed: /⚠ regression FAILED/.test(block),
     })

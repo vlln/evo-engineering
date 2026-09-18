@@ -29,8 +29,17 @@
 
 ## 3. 每圈打点（checkpoint / rollback）
 
-- 每圈：`git add -A && git commit -m "evo: round N" && git tag evo/round-N`。
-- 回滚：`git reset --hard evo/round-N`（恢复某圈后的样子）。
+- 每圈：`git add -A -- <工作区相对路径>` → `git commit -m "evo: round N" --only -- <工作区相对路径>` → `git tag <tag>`。
+  （插件会自动做这三步并返回 tag 名；手动补测时也必须照此限定路径。）
+- **⚠️ 铁律：git 操作必须限定到本工作区**。工作区常常嵌在一个更大的宿主仓库里
+  （如 `<lab>/evo-ws/chain-v1`），此时裸 `git add -A` 会把宿主的无关改动、乃至别人的整个
+  未跟踪工作树扫进 `evo: round N`，并提交到"当时检出的任意分支"。
+  **真实事故**：一次 `evo: round 1` 扫进 1,105 个文件 / 362,698 行，其中只有 18% 属于该工作区。
+- **tag 命名**：工作区**就是**仓库根时用 `evo/round-N`；**嵌套**时用 `evo/<工作区目录名>/round-N`
+  （否则多个工作区共用 `evo/round-N` 会互相覆盖——实测 9 圈只留下 5 个 tag）。
+- **回滚**：工作区即仓库根 → `git reset --hard <tag>`；**嵌套时不许用 `reset --hard`**
+  （它会丢掉宿主仓库的全部未提交改动），改用 `git checkout <tag> -- <工作区相对路径>`
+  （只恢复子树；该圈之后在工作区内新增的未跟踪文件会保留）。
 - **没有 git 就没有回滚**：工作区若不是 git 仓库，如实告知用户并建议先 `git init`
   （进化一旦跑起来，无法撤销 = 不可控）。
 - ledger 与 git 是互补：ledger 证明"发生了什么"，git 提供"回到哪"。

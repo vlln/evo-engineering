@@ -24,6 +24,37 @@ async function isGitRepo(root) {
   return res.ok && res.stdout === 'true'
 }
 
+/**
+ * 定位工作区相对其所属 git 仓库根的路径。
+ * 返回 { root, rel, wsName }；rel === '' 表示工作区**就是**仓库根。
+ *
+ * 为什么需要它：工作区经常被放在一个**更大的宿主仓库**里（例如
+ * `~/Project/my-lab/evo-ws/chain-v1`）。此时任何"对这棵工作区做 git 操作"的意图
+ * 都必须显式限定到 `rel`，否则动的是整个宿主仓库。
+ */
+async function gitLayout(workspace) {
+  const top = await runGit(workspace, ['rev-parse', '--show-toplevel'])
+  if (!top.ok) return null
+  // 两侧都必须取 realpath：macOS 上 `/var` 是指向 `/private/var` 的符号链接，
+  // `git rev-parse --show-toplevel` 返回的是后者，而 `os.tmpdir()` 给的是前者。
+  // 直接 path.relative 会算出 `../../../..` 这种"仓库外"路径，把 pathspec 打飞。
+  const abs = await fs.realpath(path.resolve(workspace)).catch(() => path.resolve(workspace))
+  const root = await fs.realpath(top.stdout).catch(() => top.stdout)
+  const rel = path.relative(root, abs).split(path.sep)
+    .filter((s) => s !== '' && s !== '.').join('/')
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return null
+  return { root, rel, wsName: path.basename(abs) }
+}
+
+/**
+ * 本工作区的 checkpoint tag 名。
+ * 嵌套在宿主仓库里时**按工作区名分区**——否则多个工作区共用 `evo/round-N` 会互相覆盖
+ * （实测：3 个工作区跑 9 圈只留下 5 个 tag，回滚会滚到别的工作区的检查点）。
+ */
+function roundTag(layout, round) {
+  return layout.rel === '' ? `evo/round-${round}` : `evo/${layout.wsName}/round-${round}`
+}
+
 async function copyTargetIntoBaseline(targetAbs, baselineDir) {
   const stat = await fs.stat(targetAbs)
   if (stat.isDirectory()) {
@@ -185,39 +216,82 @@ export async function commitRound(workspace, entry, { tag = true } = {}) {
   let text = await readLedger(workspace) ?? ''
   text = text.trimEnd() + '\n\n' + renderRoundEntry(entry)
   await fs.writeFile(ledgerPath, text)
-  const git = await isGitRepo(workspace)
-  if (!git) return { committed: false, git: 'not a git repo', tag: null }
-  await runGit(workspace, ['add', '-A'])
-  const commit = await runGit(workspace, ['commit', '-q', '-m', `evo: round ${entry.round}`])
+  const layout = await gitLayout(workspace)
+  if (layout === null) return { committed: false, git: 'not a git repo', tag: null }
+  // ⚠️ checkpoint 只捕获**本工作区**。
+  // 旧实现是 `git add -A`（无路径范围）：工作区嵌套在宿主仓库里时，它会把宿主的无关改动、
+  // 乃至别人的整个未跟踪工作树扫进 `evo: round N`，并提交到"当时检出的任意分支"。
+  // 实测代价：一次 `evo: round 1` 扫进 1,105 个文件（362,698 行），其中只有 18% 属于该工作区。
+  // 修法：`add -A -- <rel>` 限定路径 + `commit --only -- <rel>`（只提交该路径，
+  // 忽略索引里其它已暂存的内容）。
+  const spec = layout.rel === '' ? '.' : layout.rel
+  await runGit(layout.root, ['add', '-A', '--', spec])
+  const commit = await runGit(layout.root, ['commit', '-q', '-m', `evo: round ${entry.round}`, '--only', '--', spec])
   let tagRes = null
+  let tagName = null
   if (tag && commit.ok) {
-    tagRes = await runGit(workspace, ['tag', `evo/round-${entry.round}`])
+    tagName = roundTag(layout, entry.round)
+    tagRes = await runGit(layout.root, ['tag', tagName])
   }
-  return { committed: commit.ok, git: 'ok', tag: tagRes !== null && tagRes.ok ? `evo/round-${entry.round}` : null }
+  return {
+    committed: commit.ok,
+    git: 'ok',
+    tag: tagRes !== null && tagRes.ok ? tagName : null,
+    // 便于调用方/测试断言"这次提交被限定到了哪里"；工作区即仓库根时为 null
+    scopedTo: layout.rel === '' ? null : layout.rel,
+  }
 }
 
-/** 回滚：无 round → 最近一个 evo/round-* tag；有 → 指定 tag。 */
+/** 回滚：无 round → 本工作区最近一个 checkpoint tag；有 → 指定 tag。 */
 export async function rollbackWorkspace(workspace, round) {
-  const git = await isGitRepo(workspace)
-  if (!git) return { ok: false, text: 'workspace is not a git repo — nothing to roll back to' }
-  const target = round !== undefined && round !== null
-    ? `evo/round-${Number(round)}`
-    : await latestRoundTag(workspace)
+  const layout = await gitLayout(workspace)
+  if (layout === null) return { ok: false, text: 'workspace is not a git repo — nothing to roll back to' }
+  let target
+  if (round !== undefined && round !== null) {
+    const scoped = roundTag(layout, round)
+    target = (await tagExists(layout.root, scoped)) ? scoped : `evo/round-${Number(round)}`
+  } else {
+    target = await latestRoundTag(layout)
+  }
   if (target === null) return { ok: false, text: 'no evo/round-* checkpoint tags found' }
-  const res = await runGit(workspace, ['reset', '--hard', target])
-  if (!res.ok) return { ok: false, text: `git reset --hard ${target} failed: ${res.stderr}` }
-  return { ok: true, text: `rolled back to ${target}` }
+  if (layout.rel === '') {
+    const res = await runGit(layout.root, ['reset', '--hard', target])
+    if (!res.ok) return { ok: false, text: `git reset --hard ${target} failed: ${res.stderr}` }
+    return { ok: true, text: `rolled back to ${target}` }
+  }
+  // ⚠️ 工作区嵌套在宿主仓库里时**不能**用 `reset --hard`——那会把宿主的全部未提交改动
+  // （与工作区无关的文件）一起丢掉。改为只把工作区子树恢复到该 tag。
+  // 注意：该 tag 之后在工作区内**新增的未跟踪文件不会被删除**（保守，避免误删用户数据）。
+  const res = await runGit(layout.root, ['checkout', target, '--', layout.rel])
+  if (!res.ok) return { ok: false, text: `git checkout ${target} -- ${layout.rel} failed: ${res.stderr}` }
+  return {
+    ok: true,
+    text: `rolled back workspace subtree ${layout.rel} to ${target}` +
+      ` (host repo's other paths untouched; files added inside the workspace after that round are kept)`,
+  }
 }
 
-async function latestRoundTag(workspace) {
-  const res = await runGit(workspace, ['tag', '--list', 'evo/round-*'])
-  if (!res.ok) return null
-  const tags = res.stdout.split('\n').filter(Boolean).sort((a, b) => {
-    const na = Number(/evo\/round-(\d+)/.exec(a)?.[1] ?? 0)
-    const nb = Number(/evo\/round-(\d+)/.exec(b)?.[1] ?? 0)
+async function tagExists(root, name) {
+  const res = await runGit(root, ['tag', '--list', name])
+  return res.ok && res.stdout.split('\n').some((t) => t.trim() === name)
+}
+
+async function latestRoundTag(layout) {
+  // 先找本工作区分区的 tag，再回退到扁平的旧命名（兼容既有工作区）。
+  const scoped = await listRoundTags(layout.root, `evo/${layout.wsName}/round-*`)
+  if (scoped.length > 0) return scoped[0]
+  const flat = await listRoundTags(layout.root, 'evo/round-*')
+  return flat[0] ?? null
+}
+
+async function listRoundTags(root, pattern) {
+  const res = await runGit(root, ['tag', '--list', pattern])
+  if (!res.ok) return []
+  return res.stdout.split('\n').map((t) => t.trim()).filter(Boolean).sort((a, b) => {
+    const na = Number(/round-(\d+)$/.exec(a)?.[1] ?? 0)
+    const nb = Number(/round-(\d+)$/.exec(b)?.[1] ?? 0)
     return nb - na
   })
-  return tags[0] ?? null
 }
 
 /** 一次真实文件复制（保留给未来需要串流的场景；当前用 fs.cp 已够）。 */

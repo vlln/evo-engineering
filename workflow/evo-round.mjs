@@ -92,6 +92,10 @@ const joinP = function () {
 const baselineAbs = joinP(baselineRef)
 const criteriaAbs = joinP(criteriaRef)
 const targetAbs = targetWithin === '' ? baselineAbs : joinP(baselineRef, targetWithin)
+// act 的起点：**有冠军就从冠军复制**。否则每圈都从起源 baseline 重来，
+// 冠军地板只能否决、不能累积 —— 实测发现的结构缺口。
+// baseline/ 保持只读不变，它仍是用于回归对照的起源快照。
+const actBaseAbs = championDir !== null ? joinP(championDir) : targetAbs
 const ledgerAbs = joinP('ledger.md')
 
 // ---- schemas（subset：type/properties/required/additionalProperties/items/enum）----
@@ -174,24 +178,27 @@ const ACTOR_PROMPT = (index, change) => {
   return [
     'You are an ACTOR in an evolution loop. Workspace: ' + workspaceRoot,
     'Read the standard: ' + criteriaAbs,
-    'Read the baseline artifact (READ-ONLY — never modify it): ' + targetAbs,
+    'Read the artifact you must IMPROVE (READ-ONLY — never modify it): ' + actBaseAbs,
+    'That artifact is the CURRENT BEST (champion) unless the proposal says otherwise.',
     'Your assigned proposal (' + (index + 1) + '): ' + change,
-    'Work directory: ' + candidateDir + ' — create it, copy the baseline artifact file(s) into it, then apply the proposal there.',
+    'Work directory (ABSOLUTE path — use it VERBATIM; never turn it into a relative path, and never rely on the shell working directory): ' + candidateDir + ' — create it, copy THAT artifact file(s) into it, then apply the proposal there.',
     'This candidate is ISOLATED: do NOT read or touch any other candidate under ' + joinP('runs') + '. Work only inside your own candidate dir.',
     'Also write CHANGELOG.md inside the candidate dir: what changed vs baseline, why, and which criteria each change targets.',
     'If the proposal is unclear or infeasible, apply the closest safe small change and say so in note.',
-    'Output schema: candidateDir (relative path, e.g. runs/' + round + '/candidate-' + (index + 1) + '), done (true when written), note.'
+    'Output schema: candidateDir (echo the EXACT ABSOLUTE work directory you used, character for character), done (true when written), note.'
   ].join('\\n')
 }
 
 const CRITIC_PROMPT = (candidate, criticIndex) => {
-  const candidateAbs = joinP(candidate.candidateDir)
+  const candidateAbs = candidate.candidateAbs !== undefined ? candidate.candidateAbs : joinP(candidate.candidateDir)
   return [
     'You are an independent CRITIC in an evolution loop; you judge ONE candidate only.',
     'Workspace: ' + workspaceRoot,
     'The standard defining "better" (read it): ' + criteriaAbs,
-    'Baseline for comparison (READ-ONLY): ' + targetAbs,
-    'Candidate to evaluate (read its files and CHANGELOG.md): ' + candidateAbs,
+    'Origin baseline — immutable snapshot, use it to detect regressions (READ-ONLY): ' + targetAbs,
+    'CURRENT CHAMPION you must strictly beat: ' + (championDir !== null ? actBaseAbs : '(none yet)'),
+    'Adoption requires score >= threshold AND strictly above champion score (' + championScore + ').',
+    'Candidate to evaluate (ABSOLUTE path — use it verbatim when running any command): ' + candidateAbs,
     'Judge honestly how well the candidate satisfies the standard. Prefer concrete, evidence-based observations over impressions. Be skeptical: look for what is NOT improved, what regressed vs baseline, and risks.',
     'Critics never coordinate — your verdict is your own. If possible, also save your verdict JSON to ' + joinP(candidate.candidateDir, 'verdict-' + (criticIndex + 1) + '.json') + ' for the audit trail.',
     'Output schema: score (0-10 overall), verdict (accept = take as champion; revise = direction right but needs work; reject = does not help), summary, strengths[], weaknesses[], risks[], regressionConcerns[] (things that could break what previously worked), perCriterion[] ({criterion, score, note}).'
@@ -265,7 +272,14 @@ actorResults.forEach(function (r, i) {
     log('actor-' + (i + 1) + ' failed — candidate skipped')
     return
   }
-  candidates.push({ index: i, candidateDir: r.candidateDir, proposal: proposals[i], actorNote: typeof r.note === 'string' ? r.note : '' })
+  // actor 可能报**绝对路径**（实测会）。对外仍用它的原值（结果/report 的契约，测试锁定），
+  // 内部另算一个安全的绝对路径给 critic 用（避免把绝对路径再拼一次 workspaceRoot）。
+  const rawDir = typeof r.candidateDir === 'string' ? r.candidateDir.trim() : ''
+  const absDir = rawDir.indexOf('/') === 0 ? rawDir : joinP(rawDir)
+  if (rawDir.indexOf('/') === 0 && rawDir.indexOf(workspaceRoot) !== 0) {
+    log('WARNING: actor-' + (i + 1) + ' wrote OUTSIDE the workspace: ' + rawDir + ' — accepted, but the prompt asked for the given absolute dir')
+  }
+  candidates.push({ index: i, candidateDir: r.candidateDir, candidateAbs: absDir, proposal: proposals[i], actorNote: typeof r.note === 'string' ? r.note : '' })
 })
 if (candidates.length === 0) {
   return { ok: true, report: 'evo-round #' + round + ': all actors failed to produce candidates. Check ' + joinP('runs', String(round)) + ' for partial state.', round: round, needsHuman: true }

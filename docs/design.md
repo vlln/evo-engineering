@@ -41,8 +41,13 @@ L1（直喂 workflow 工具）与 L2（插件内嵌）使用——单源。
 - **D4 模糊标准走语言理解 + 分歧升级**：critic 必须给证据行；入选者
   spread≥3 → needsHuman 升级到元层对话，人裁定后写回标准。这是"标准被
   进化的机制"（L2），也是用户笔记里 skill 实验的机制化。
-- **D5 每圈 git checkpoint（tag evo/round-N）+ ledger 追加**：可回溯地基。
+- **D5 每圈 git checkpoint + ledger 追加**：可回溯地基。
   ledger 是追加型（不篡改历史），git 提供回滚。
+  **tag 命名**：工作区即仓库根 → `evo/round-N`；**嵌套在宿主仓库里 → `evo/<工作区名>/round-N`**
+  （否则多工作区互相覆盖）。**提交与回滚都必须限定到本工作区**：
+  `add -A -- <rel>` + `commit --only -- <rel>`；嵌套时回滚用 `checkout <tag> -- <rel>`
+  而**不是** `reset --hard`（后者会丢掉宿主仓库的全部未提交改动）。
+  背景与真实事故见 `skills/evo/references/anti-degradation.md` §3。
 - **D6 预算控制**：maxAgents 默认 18，超出先砍 critic；收敛判据（连续无胜者/
   分数停滞/预算尽）——防"进化停不下来"。
 

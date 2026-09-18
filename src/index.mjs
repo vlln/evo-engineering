@@ -23,20 +23,28 @@ import {
   parseLedger, findChampion, nextRound, parseRegressionProbes, today,
 } from './ledger.mjs'
 import { promises as fs } from 'node:fs'
+
+// **必须声明 inject**：apply 里静态访问 ctx.tools / ctx.commands，
+// cordis 4 对未声明的服务属性访问会直接抛 `cannot get property "X" without inject`
+// ⇒ 整个 entry 装载失败、profile 起不来（实测：插件此前从未在 profile 里启动过）。
+// workflowEngine 仍按上面的理由**不**静态 inject，只在调用时 ctx.get()。
+export const inject = ['tools', 'commands']
 import path from 'node:path'
 
 export const name = 'evo-engineering'
 
 /** 工具侧配置：目前没有用户可调项（预留未来 settings 卡）。 */
 export function apply(ctx) {
-  // ── workflows 服务的惰性守卫（抄 dsh-inspect 的手法，防加载期挂起）──────
+  // ── workflowEngine 服务的惰性守卫（防加载期挂起）。
+  // 服务名在 DSH 0.1.2-rc.1 是 workflowEngine（早期叫 workflows）——实测踩过。
+  // headless bundle 不含该提供者，需在 profile 补 insert 行。
   function requireWorkflows(context) {
-    const workflows = context.get('workflows')
+    const workflows = context.get('workflowEngine')
     if (workflows === void 0) {
       throw new Error(
-        'evo-engineering: no "workflows" service in this profile — evo rounds run on the '
-        + 'official workflow engine (@deepseek-ai/dsh-workflow). Use a profile whose '
-        + 'composition provides workflows (official base bundles) or add a provider plugin.',
+        'evo-engineering: no "workflowEngine" service in this profile — evo rounds run on the '
+        + 'official workflow engine (@deepseek-ai/dsh-workflow). Add that provider to the profile '
+        + '(e.g. an insert row naming @deepseek-ai/dsh-workflow); the headless bundle does NOT ship it.',
       )
     }
     return workflows
@@ -182,10 +190,45 @@ export function apply(ctx) {
         humanReasons: Array.isArray(r.humanReasons) ? r.humanReasons : [],
         note: typeof args.note === 'string' ? args.note : undefined,
       }
+      // ── 吸收工作区外的候选（修复"候选落到 /tmp"的 bug）────────────────────
+      // 根因：actor/critic 是子代理，按**自己的 cwd** 解析路径 ⇒ 候选可能落在工作区之外。
+      // 后果：工作区 runs/ 为空、git checkpoint 与可回溯承诺**实际是空的**；
+      //       而且 ledger 里记绝对路径会让下一圈的冠军解析更脆。
+      // 修法：回合结束后把工作区外的候选**拷进** <ws>/runs/<round>/candidate-<k>，ledger 记相对路径。
+      const wsResolved = path.resolve(workspace)
+      const inside = (p) => {
+        const a = path.resolve(p)
+        return a === wsResolved || a.startsWith(wsResolved + path.sep)
+      }
+      const absorb = async (dir, k) => {
+        if (typeof dir !== 'string' || dir === '' || inside(dir)) return dir
+        const rel = path.join('runs', String(entry.round), 'candidate-' + k)
+        const dest = path.join(wsResolved, rel)
+        try {
+          await fs.mkdir(dest, { recursive: true })
+          await fs.cp(path.resolve(dir), dest, { recursive: true, force: true, errorOnExist: false })
+          return rel
+        } catch (e) {
+          return dir
+        }
+      }
+      const absorbed = []
+      for (let k = 0; k < entry.outcomes.length; k++) {
+        const o = entry.outcomes[k]
+        const before = o?.candidateDir
+        const after = await absorb(before, k + 1)
+        if (after !== before && o !== undefined && o !== null) { o.candidateDir = after; absorbed.push({ from: before, to: after }) }
+      }
+      if (entry.selected !== null && entry.selected !== undefined) {
+        const k = entry.outcomes.findIndex((o) => o.candidateDir === entry.selected.candidateDir) + 1
+        entry.selected.candidateDir = await absorb(entry.selected.candidateDir, k > 0 ? k : 1)
+      }
+
       const commit = await commitRound(workspace, entry)
 
       const lines = []
       lines.push(report)
+      if (absorbed.length > 0) lines.push('\n- absorbed ' + absorbed.length + ' candidate(s) written outside the workspace back into runs/' + entry.round + '/')
       lines.push('')
       lines.push(`- ledger: ${path.join(workspace, 'ledger.md')}`)
       lines.push(`- git checkpoint: ${commit.committed ? (commit.tag ?? 'committed') : (commit.git === 'not a git repo' ? 'skipped (not a git repo)' : 'failed')}`)
