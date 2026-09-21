@@ -22,11 +22,24 @@ evo-engineering/
 ## 本地试法
 
 ```sh
-node --test                                   # 全部测试（零依赖；SDK 缺席时插件组自动跳过）
+node --test                                   # 全部测试（零依赖；SDK 缺席时插件注册组自动跳过并说明原因）
 node scripts/gates/run.mjs                    # 全部门禁
 node scripts/gates/run.mjs md-links skills     # 按改动面跑最窄证据
 node scripts/gates/run.mjs --list             # 列出可用门禁
-npm install && node --test                    # 装 devDependencies（官方 SDK）后跑完整组
+```
+
+**本仓库刻意没有任何依赖声明**（`dependencies` / `peerDependencies` / `devDependencies` 全空是设计）：
+官方 `@deepseek-ai/*` 由 dsh 运行时经 profile 的 pnpm 闭包注入，自己声明会在公共 npm 上解析
+不到（`@deepseek-ai/dsh-tools` 自带 cordis/dsh-agent 等 9 个 peer，单独 `npm install` 直接
+ERESOLVE）。因此 `npm install` 是空操作。
+
+想让插件注册组（`test/plugin-apply.test.mjs`）也跑起来，就把 SDK 链进 `node_modules`：
+
+```sh
+DSH_AI="$(npm root -g)/@deepseek-ai/dsh/node_modules/@deepseek-ai"   # dsh 安装位置
+mkdir -p node_modules/@deepseek-ai
+ln -s "$DSH_AI/dsh-tools" node_modules/@deepseek-ai/dsh-tools
+node --test        # 插件注册组不再跳过（本机开发树里已如此）
 ```
 
 门禁清单与"每个门禁必须能被非法样例拒绝"的自证测试：

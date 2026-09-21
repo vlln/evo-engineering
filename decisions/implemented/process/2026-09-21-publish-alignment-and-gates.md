@@ -20,10 +20,11 @@ Status: implemented
 
 ## Decision
 
-- **不声明官方依赖**。需要这些包才能跑的本地测试改放 `devDependencies`（精确钉
-  `@deepseek-ai/dsh-tools@0.1.2-rc.1`，即开发实际使用的版本）；`dependencies`/`peerDependencies`
-  保持为空是设计。测试在 SDK 缺席时**优雅跳过**并写明原因，于是裸 clone 的 `node --test`
-  也能跑出有意义的结果。
+- **不声明任何依赖**：`dependencies` / `peerDependencies` / `devDependencies` 三者全空是设计。
+  本地跑插件注册组需要的官方 SDK，改用**文档化的 symlink 配方**把 dsh 安装里的
+  `@deepseek-ai/dsh-tools` 链进 `node_modules`（见 `docs/engineering-notes.md`）；
+  测试在 SDK 缺席时**优雅跳过**并写明原因，于是裸 clone 的 `node --test` 也能跑出有意义的结果
+  （实测：38 pass / 5 skip；链上 SDK 后 43 pass）。
 - **加门禁** `scripts/gates/run.mjs`：`package-contract`（entry/bundle patch/insert 行同源/
   不得声明官方包/dsh.skills 若声明则须存在）、`skills`（frontmatter、name 与目录同名、
   description 够长、<500 行）、`no-machine-paths`（入库文件不得含本机绝对路径）、
@@ -43,6 +44,13 @@ Status: implemented
 react 等 peer 才能构建），本插件是纯 Node half、零构建，声明只会把 pnpm peer 警告带给用户，
 并在公共 npm 上解析不到。
 
+**把官方 SDK 放进 `devDependencies`（本次先落地的形态，随后被推翻）。** 目的是让裸 clone
+`npm install` 后能跑完整测试组。实测**行不通**：`@deepseek-ai/dsh-tools` 自带 9 个 peer
+（cordis / dsh-agent / dsh-code-runtime / dsh-invariants / dsh-llm / dsh-session / dsh-scope /
+dsh-system-prompt / dsh-user-approval），单独 npm 安装必然 ERESOLVE 失败——要让 `npm install`
+成功就得把整条闭包声明进来，把发布包与官方版本号硬耦合。最终改成：全空 + symlink 配方 +
+测试优雅跳过。
+
 **声明 `dsh.skills` 让运行时注册 skill。** 核实结果：**当前 dsh 0.1.2-rc.1 全量搜索
 `dsh.skills` 零命中**——没有任何消费方。skill 的真实发现路径是文件系统根：
 `<项目>/.dsh/skills`、`<项目>/.agents/skills`、`$DSH_HOME/skills`、`~/.agents/skills`，
@@ -58,13 +66,12 @@ harness 的注册通道上，正好抵消 L0 的全部价值。
 ## Consequences
 
 - `npm run gate` 成为提交前/发布前动作；CI 未接入（当前手动跑，属已知缺口）。
-- `devDependencies` 钉在开发版本（0.1.2-rc.1）而非 npm `latest`（0.0.1-rc.1）：**版本升级时
-  必须同步更新这里**，否则本地测试跑在旧 API 上。
+- 本地开发依赖"官方 SDK 在盘上"这一前提：**基线升级后必须重新链接**（`node_modules` 里的
+  `@deepseek-ai/dsh-tools` 指向旧安装）；门禁不会因此变绿变红，但插件组测试会跳过。
 - README 与 `docs/engineering-notes.md` 的读者分离成为常驻约束：新增内容先问"读者是用它的人
   还是改它的人"。
-- 环境事实（记此备查）：`dsh plugin --profile web add` 对 git 源安装不安装 `devDependencies`，
-  因此 `devDependencies` 不会污染用户侧；`private: true` 不影响 git 源安装，但会阻止 npm
-  publish（保留该字段 = 暂不走 npm）。
+- 环境事实（记此备查）：`private: true` 不影响 git 源安装（实测装成功），但会阻止 npm publish
+  （保留该字段 = 暂不走 npm）；`npm install` 在本仓库是空操作（零依赖是设计）。
 
 ## Testing
 

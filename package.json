@@ -49,9 +49,6 @@
     "skill"
   ],
   "license": "MIT",
-  "devDependencies": {
-    "@deepseek-ai/dsh-tools": "0.1.2-rc.1"
-  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
