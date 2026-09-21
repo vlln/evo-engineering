@@ -58,13 +58,15 @@
 **1) dsh 插件**：
 
 ```sh
-dsh plugin --profile web add "github:vlln/evo-engineering#main"
-# 本地目录：cd evo-engineering && dsh plugin --profile web add .
-# 卸载：   dsh plugin --profile web remove @vlln/evo-engineering
+dsh plugin --profile web add "github:vlln/evo-engineering#main"   # 装
+dsh plugin --profile web remove @vlln/evo-engineering              # 卸载
 ```
 
 装完**重启 web**（bundle 在启动时组层栈）。仓库是零构建的（入口直接是 `src/index.mjs`），
 git 源安装不触发构建。
+
+（改源码要立刻试的本地开发安装见 [`docs/engineering-notes.md`](docs/engineering-notes.md)——
+它需要先把官方 SDK 链进 clone 的 `node_modules`，否则 profile 起不来。）
 
 插件跑在官方 workflow 引擎上（服务名 `workflowEngine`，官方基础组合自带）。本插件**不**静态
 依赖它：缺该服务的组合里插件照常启动，只有调用工具时才报一条可操作的错误，而不是拖垮整个

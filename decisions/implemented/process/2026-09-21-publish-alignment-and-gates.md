@@ -72,6 +72,14 @@ harness 的注册通道上，正好抵消 L0 的全部价值。
   还是改它的人"。
 - 环境事实（记此备查）：`private: true` 不影响 git 源安装（实测装成功），但会阻止 npm publish
   （保留该字段 = 暂不走 npm）；`npm install` 在本仓库是空操作（零依赖是设计）。
+- **零依赖的代价：只能从 profile 树内安装**。官方包的真实解析源是
+  `$DSH_HOME/profiles/node_modules/`（profiles 层扁平 fallback）。Node 从包的**真实路径**向上找
+  `node_modules`，于是：git 源安装（包落在 `<profile>/node_modules/<pkg>`）⇒ 命中 fallback ✓；
+  本地目录安装（包在 profile 树之外）⇒ 永远到不了 fallback，且这是**装载期抛错**
+  （`plugin tree failed to load`，整个 profile 起不来，退出码 1），不只是插件不可用。
+  实测证据：同一份零依赖代码，git 源装能正常 boot；指向 `/tmp/evo-diag` 的本地目录装直接崩。
+  因此 README 的安装节只给 git 源；本地开发安装的前置条件（先 link SDK 再 add）写在
+  `docs/engineering-notes.md`。
 
 ## Testing
 

@@ -42,6 +42,30 @@ ln -s "$DSH_AI/dsh-tools" node_modules/@deepseek-ai/dsh-tools
 node --test        # 插件注册组不再跳过（本机开发树里已如此）
 ```
 
+## 本地开发安装（改了 Node half 要立刻试）
+
+**必须先链 SDK，再装目录**，否则 profile 起不来：
+
+```sh
+DSH_AI="$(npm root -g)/@deepseek-ai/dsh/node_modules/@deepseek-ai"
+mkdir -p node_modules/@deepseek-ai
+ln -s "$DSH_AI/dsh-tools" node_modules/@deepseek-ai/dsh-tools
+dsh plugin --profile web add "$PWD"     # 在包目录内 add（dsh 锚定 . 为绝对路径）
+```
+
+为什么必须这样（实测）：官方包的真实解析源是 **`$DSH_HOME/profiles/node_modules/`（profiles 层
+扁平 fallback，含 `@deepseek-ai/dsh-tools`）**。Node 的 ESM 解析从包的**真实路径**向上逐级找
+`node_modules`，所以：
+
+- **git 源安装**：包落在 `<profile>/node_modules/@vlln/evo-engineering` ⇒ 向上能找到
+  `profiles/node_modules` ⇒ 解析成功（实测 boot 正常，URL 正常输出）。
+- **本地目录安装**：包的真实路径在 profile 树**之外**（如 `/tmp/…`）⇒ 向上永远到不了那个
+  fallback ⇒ `Cannot find package '@deepseek-ai/dsh-tools'`，而且这是**装载期抛错**：
+  profile 直接起不来（`plugin tree failed to load`，进程退出码 1），不只是插件不可用。
+
+（另：`dsh plugin add` 对 git 源不安装 devDependencies，所以仓库零依赖不影响用户侧安装——
+只有本地开发树需要上面那条链接。）
+
 门禁清单与"每个门禁必须能被非法样例拒绝"的自证测试：
 
 | 门禁 | 抓什么 | 自证测试 |
