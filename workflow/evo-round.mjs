@@ -2,7 +2,7 @@
 //
 // 这是 L1 层：把进化循环里「propose → act → critique → select → regression」
 // 固化成 schema 校验、并行扇出的 workflow 脚本。消费方式有两种：
-//   1. 插件（src/index.mjs 的 evo_round 工具）经 ctx.workflows.start({script})
+//   1. 插件（src/index.mjs 的 evo_round 工具）经 ctx.get('workflowEngine').start({script})
 //      运行本脚本，跑完后由插件（Node 侧）追加 ledger、打 git checkpoint；
 //   2. 任何带官方 workflow 工具的 dsh 会话，把 SCRIPT 直接喂给 workflow 工具
 //      （args 见 ROUND_ARGS_DOC），由元层（会话/人）自己驱动循环。

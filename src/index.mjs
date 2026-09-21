@@ -6,7 +6,7 @@
 //   - 一个 /evo 用户命令路由器。
 //
 // 回合协议本体不在这里：evo_round 把 workflow/evo-round.mjs 里的引擎脚本交给
-// 官方 workflow 引擎（ctx.workflows）跑，引擎负责并行扇出 actor/critic/回归
+// 官方 workflow 引擎（服务名 workflowEngine，惰性读取）跑，引擎负责并行扇出 actor/critic/回归
 // 子代理并做 schema 校验；本文件只做 Node 侧的收尾——ledger 追加 + git
 // checkpoint（可回溯地基）与人类门禁提示。
 //

@@ -53,9 +53,14 @@ L1（直喂 workflow 工具）与 L2（插件内嵌）使用——单源。
 
 ## 4. 插件实现要点（抄自生态先例）
 
-- **workflows 服务惰性读取**（`ctx.get('workflows')`，不静态 inject）：静态
-  inject 在无 workflows 的组合里会让 entry 永久 pending 并拖垮 profile 启动
-  （dsh-inspect 的教训，注释里写了完整链路）。
+- **两条服务纪律**（都踩过，见 `known-issues.md` #1/#2）：
+  1. 模块**必须** `export const inject = ['tools','commands']`——cordis 4 对未声明
+     服务的属性访问直接抛错（`cannot get property "tools" without inject`）。
+     漏了就是**启动即崩**：整个 entry 装载失败、profile 起不来。
+  2. 引擎服务**不**静态 inject，只在调用时 `ctx.get('workflowEngine')` 惰性读取
+     （静态 inject 在缺该服务的组合里会让 entry 永久 pending 并拖垮 profile
+     启动——dsh-inspect 的教训）。但服务名要认准：0.1.2-rc.1 已由 `workflows`
+     改名 `workflowEngine`，写错等于**功能死**。
 - 命令 handler 支持 async（`CommandResult | Promise<CommandResult>`），
   `/evo round` 走完整 workflow + ledger + tag。
 - 插件是 **plain ESM JS、零构建**（`main: ./src/index.mjs`）——对照组是
@@ -86,20 +91,30 @@ dsh-evolve / dsh-memory-evolve）。详见 `skills/evo/references/rsi-ladder.md`
 
 ## 7. 验证
 
-- `test/`：ledger 纯函数单测、SCRIPT vm 编译 + 协议片段断言、mock 引擎
-  全流程跑（select 逻辑/冠军地板/reject 一票否决/回归失败路径）、
-  全部 `node --check`。`node --test` 零依赖全绿。
-- 真实引擎验证（examples/blog-draft，AI 味博客草稿，模糊标准×4 条）：
-  - **Round 1**（真实 propose×2/act×2/critique×4/regress×2 子代理）：
-    candidate-1 以 8.8 当选（> champion 0），critic 用 grep 验证禁词零命中、
-    量化句长极差 9.5 倍（baseline 3.9 倍），两条回归探针 PASS；
-    critic 对"第一人称 vs 群体口吻"的视角回归提出 concern → 自动
-    needsHuman（人可介入），照常记账打点。
-  - **Round 2**（meta 显式提议修复 critic 指出的叙事自洽瑕疵）：候选 8.5，
-    高于阈值、无 reject，但 **8.5 < 冠军地板 8.8 → 拒绝采纳，champion 不变**——
-    防退化按设计生效。
-  - 全过程存档于 `examples/blog-draft.evo-workspace/`（ledger + runs/
-    candidate-*/verdict-*.json + git tag evo/round-1/2，逐步可回滚）。
-- 插件完整的 profile 安装验证（`dsh plugin --profile web add .` + 隔离
-  DSH_HOME）留待验证站；引擎级路径已通过上述 workflow 工具验证（与
-  插件内嵌路径同一条 ctx.workflows.start 链路）。
+验证分两层，**两层都做过，且顺序曾经是错的**：
+
+**引擎面（L1）**——真实 workflow 引擎跑通两个回合（`examples/validation/` 是存档）：
+
+- **Round 1**（真实 propose×2 / act×2 / critique×4 / regress×2 子代理）：
+  candidate-1 以 **8.8 当选**（> champion 0），critic 的判分是量化+取证式的
+  （grep 验证禁词零命中、句长极差 3.9 → 9.5 倍），两条回归探针 PASS；
+  critic 对"第一人称 vs 群体口吻"提出视角回归担忧 → 回合自动标 `needsHuman`。
+- **Round 2**（元层读 Round 1 的 critic 意见后提出针对性提议）：挑战者 **8.5**，
+  高于阈值、无 reject，但 **8.5 < 冠军地板 8.8 → 拒绝采纳，champion 不变**。
+
+**插件面（L2）**——在真实 profile 里做端到端验证（一个实验仓库，44 批实验 /
+130+ 提交），结果见 `known-issues.md`：
+
+- 出厂 v0.1 **从未在真实 profile 里启动过**：验证暴露 6 个 bug，其中 4 个使插件
+  完全不可用（启动即崩 / 服务名已改名 / **冠军地板静默失效** / 产物越界），
+  2 个会误伤宿主仓库的 git 提交（真实事故：一次 checkpoint 扫进 1,105 文件 /
+  362,698 行，仅 18% 属于本工作区）。
+- 全部已修 + 回归测试钉住（`node --test` **26 项**，含 `test/git-scope.test.mjs`
+  对 5/6a/6b 的四种表现、`test/plugin-apply.test.mjs` 对 #1/#2 的钉死）。
+- **仍未修 2 项**：actor 越界的"根"（需 DSH 侧 per-agent cwd）、σ_fitness 未标定
+  就允许启动循环（噪声可与遗传差异同阶，演化退化成随机游走且看起来正常）。
+  见 `known-issues.md` §3。
+
+**教训（写给未来的自己）**：mock ctx 不施加 cordis 的 inject 门禁，所以
+"apply 注册成功"的单测照不出 #1；引擎级验证只覆盖 L1，绕过了 L2 插件面。
+**两层的验证都要有，且不能互相代替。**

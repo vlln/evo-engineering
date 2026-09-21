@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-external/evo-engineering",
+  "name": "@vlln/evo-engineering",
   "description": "进化工程（Evolution Engineering）：把 RSI 变成使用 agent 的方式 —— /evo 命令 + evo_* 工具（evo_init/evo_round/evo_status/evo_rollback），基于官方 workflow 引擎的 propose→act→critique→select→regression 回合协议，便携 evo skill 随包分发。",
   "version": "0.1.0",
   "private": true,
@@ -17,14 +17,34 @@
     "src",
     "workflow",
     "skills",
+    "docs",
     "cordis.patch.yml",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
     "test": "node --test",
     "check": "node --check src/index.mjs && node --check src/evo.mjs && node --check src/ledger.mjs && node --check workflow/evo-round.mjs"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vlln/evo-engineering.git"
+  },
+  "homepage": "https://github.com/vlln/evo-engineering#readme",
+  "bugs": {
+    "url": "https://github.com/vlln/evo-engineering/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "rsi",
+    "self-improvement",
+    "evolution-engineering",
+    "agent",
+    "skill"
+  ],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/dsh-tools": "^0.0.1",

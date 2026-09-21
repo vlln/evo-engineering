@@ -4,3 +4,4 @@ examples/*/.evo-workspace/
 examples/*.evo-workspace/
 examples/*/runs/
 .agents/
+AGENTS.local.md

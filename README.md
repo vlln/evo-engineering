@@ -26,12 +26,17 @@
 
 ```sh
 dsh plugin --profile web add "github:vlln/evo-engineering#main"
-# 或本地：cd evo-engineering && dsh plugin --profile web add .
+# 或本地目录：cd evo-engineering && dsh plugin --profile web add .
+# 卸载：dsh plugin --profile web remove @vlln/evo-engineering
 ```
 
-装完**重启 web**（bundle 走层栈）。插件运行在官方 workflow 引擎上
-（`@deepseek-ai/dsh-workflow`，官方基础组合自带）；缺该服务的组合里插件照常
-启动，工具调用时报清晰错误。
+包名 `@vlln/evo-engineering`。仓库是**零构建**的（入口直接是 `src/index.mjs`，
+纯 ESM JS），所以 git 源安装不会触发构建步骤。装完**重启 web**（bundle 在启动
+时组层栈）。
+
+插件跑在官方 workflow 引擎上（服务名 `workflowEngine`，由官方基础组合提供——
+本插件**不**静态 inject 它：缺该服务的组合里插件照常启动，只有工具被调用时才
+报一条可操作的错误，而不是拖垮整个 profile 启动）。
 
 **其他 harness / 只想用协议**——只装 skill：把 `skills/evo/` 目录放进你的
 skills 目录（或 `skit install ./evo-engineering`）。SKILL.md 是完整手册，
@@ -64,11 +69,20 @@ skills 目录（或 `skit install ./evo-engineering`）。SKILL.md 是完整手�
 - **递归是阶梯不是玄学**：产物（L1）→ 标准（L2，人签收）→ 协议（L3，A/B）→
   能力（L4，默认关）。见 `skills/evo/references/rsi-ladder.md`。
 
-## 示例
+## 示例（真跑过的证据）
 
-`examples/blog-draft/` 是一篇 AI 味爆棚的博客草稿 + 人起草的模糊标准
-（去 AI 味/像真人/有观点）；真实进化运行结果在
-`examples/blog-draft.evo-workspace/`（含每圈候选与 verdict，逐步可回滚）。
+`examples/blog-draft/` 是一篇 AI 味爆棚的博客草稿 + 人起草的 4 条**模糊标准**
+（去 AI 味 / 像真人写的 / 有观点 / 保留原意）。
+
+`examples/validation/` 是**真实引擎跑出来的两回合存档**（不是手写样例）：
+
+- Round 1：胜出候选 **8.8 当选**——critic 的证据是量化的（grep 验证禁词零命中、
+  句长极差从 baseline 3.9 倍拉到 9.5 倍），并主动报了视角回归担忧 → 回合被标
+  `needsHuman`（人可介入）
+- Round 2：挑战者 **8.5**，高于阈值且无 reject，但 **8.5 < 冠军 8.8 → 拒绝采纳**。
+  这是"冠军地板"在真实运行中生效的样子——**分数进步不足时，系统宁可不动**
+
+复现方式与逐帧说明见 `examples/validation/README.md`。
 
 ## 仓库结构
 
@@ -77,18 +91,28 @@ evo-engineering/
 ├── skills/evo/            # L0：便携手册（SKILL.md + references/ + assets/）
 ├── workflow/              # L1：evo-round 引擎脚本（同一份被插件内嵌使用）
 ├── src/                   # L2：插件（index.mjs = cordis 入口；evo.mjs + ledger.mjs = 纯 Node 逻辑）
-├── test/                  # node --test：语法/协议/ledger/mock 全流程
-├── docs/design.md         # 第三受众：架构决策记录
-└── examples/              # 演示目标 + 真实进化工作区
+├── test/                  # node --test：语法/协议/ledger/mock 全流程/git 范围
+├── docs/design.md         # 架构决策记录（第三受众）
+├── docs/known-issues.md   # 验证中发现的问题 + 最小复现 + 7 条快速自检
+├── examples/              # 演示目标 + 真实进化回合存档
+└── CHANGELOG.md
 ```
 
 开发与测试：`node --test`（零依赖）、`npm run check`（全部 `node --check`）。
 
-## 状态与路线
+## 状态、已知问题与路线
 
-v0.1 已闭环：init→round→status→rollback 可用，示例跑过真实引擎回合。
-路线见 `docs/design.md` §6（UI 进化页签、探针自动积累、/evo watch 持续圈、
-harbor 基准对接）。
+- **可用状态**：init → round → status → rollback 全部闭环；引擎面与插件面均已
+  在真实 profile 中验证过。
+- **坦诚说明**：v0.1 出厂时插件面**从未在真实 profile 里启动过**，在一个实验
+  仓库（44 批实验）上做端到端验证时暴露了 6 个 bug（4 个使插件完全不可用，
+  含"启动即崩"与"冠军地板静默失效"；2 个会误伤宿主仓库的 git 提交）。全部已修
+  并带回归测试（26 项）。详细清单、根因与最小复现见 `docs/known-issues.md`。
+- **仍未修**：① actor 越界的"根"（现靠回合后吸收补救，根治需 DSH 侧 per-agent
+  cwd）；② σ_fitness 未标定就允许启动循环——噪声与遗传差异同阶时演化会退化成
+  随机游走**且看起来完全正常**（`docs/known-issues.md` §3）。
+- **路线**：见 `docs/design.md` §6（UI 进化页签、探针自动积累、`/evo watch`
+  持续圈、harbor 0–1 判分器当 critic）。
 
 ## License
 
