@@ -93,8 +93,31 @@ dsh plugin --profile web add "$PWD"     # 在包目录内 add（dsh 锚定 . 为
 [known-issues](known-issues.md) 与 [决策记录](../decisions/implemented/bug-fix/2026-09-18-plugin-face-never-booted.md)。
 
 **教训（写下来免得再犯）**：mock ctx 不施加 cordis 的严格注入门禁，所以"apply 注册成功"的
-单测照不出"缺 `inject` 导致启动即崩"；引擎级验证只覆盖 L1，会绕过整个 L2 插件面。
-**两层的验证都要有，不能互相代替。**
+单测照不出"缺 `inject` 导致启动即崩"；引擎级验证只覆盖 L1，会绕过整个 L2 插件面。**两层的验证都要有，不能互相代替。**
+
+## 新基线复验：dsh 0.1.5-rc.2（2026-09）
+
+在**安装版** 0.1.5-rc.2（`npm i @deepseek-ai/dsh@0.1.5-rc.2`）+ 全新隔离 `DSH_HOME` 上重跑了一遍
+发布形态，三步证据链：
+
+1. **装**：`dsh plugin --profile web add "github:vlln/evo-engineering#main"` → 依赖进 profile、
+   bundle 进 `dsh.profile.bundles`、组合树出现 `# == @vlln/evo-engineering` 层。
+2. **启**：web boot 干净（URL 正常输出、无 `plugin tree failed to load`），进程存活。
+3. **真调**（boot 干净不算证据）：headless profile 里让模型调 `evo_init` → 工具执行，
+   磁盘上真的出现 `baseline/` 快照、`evals/` 占位、`ledger.md`、`.evo-meta.json`，
+   以及插件的 Node 侧行为 `git init` 提交 `evo: init workspace`；
+   再跑一回合 `evo_round`（1 提议 / 1 actor / 1 critic）→ 报告正常（候选 5 分 < 阈值 7 →
+   正确"不采纳"、`needsHuman: true`），ledger 追加 `## Round 1`、打上 `evo/round-1` tag、
+   候选目录含 `CHANGELOG.md` 与 `verdict-1.json`，且 **checkpoint 提交只含工作区路径**
+   （0.1.2 上修的 git 范围在 0.1.5 同样成立）。
+
+**负控**（证明"干净日志"有证据力）：把一份删掉 `export const inject` 的副本装进同一 profile，
+boot 立刻响亮失败——`plugin tree failed to load: ... cannot get property "tools" without inject`，
+退出码 1。所以上面的干净 boot 不是"沉默的假成功"。
+
+注意：这一步只覆盖 0.1.5 的**插件机制**；引擎服务名（`workflowEngine`）与 `dsh.bundle` 契约
+在 0.1.5 未变，因此未改代码。“安装版 vs master 源码”的其它差异见 plugin-registry skill 的
+gotchas 8（那轮踩到的 `.credentials.yaml` 版本字段类型、headless 引擎 provider、`--no-open` 漂移）。
 
 ## 环境事实（dsh 0.1.2-rc.1 实测，基线升级时须重新核实）
 
