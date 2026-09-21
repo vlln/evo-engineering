@@ -26,7 +26,7 @@ git -C <工作区> status --porcelain | grep -v '^??' | head # 宿主仓库的�
 | 1 | **启动即崩**：`cannot get property "tools" without inject` | `apply` 里静态访问 `ctx.tools` / `ctx.commands`，但模块没有 `export const inject`。cordis 4 对未声明服务的属性访问直接抛错 ⇒ 整个 entry 装载失败、profile 起不来 | 在任意 profile 挂载本插件并启动；或 `node -e "import('./src/index.mjs')"` 后比对 `m.inject`（旧版为 `undefined`） | ✅ 加 `export const inject = ['tools','commands']` |
 | 2 | **功能死**：`no "workflows" service in this profile` | 服务名在 DSH 0.1.2-rc.1 已由 `workflows` 改为 `workflowEngine`；且 headless bundle **不含**该提供者 | 在 headless profile 里跑 `/evo` | ✅ 改名；报错文案改为"请在 profile 补 `@deepseek-ai/dsh-workflow` 的 insert 行" |
 | 3 | **冠军每圈丢失**（机制静默失效） | `ledger.mjs` 的 `SELECTED_RE` 只匹配相对路径 `runs/N/candidate-M`，而 ledger 实际写的是**绝对路径** ⇒ `findChampion` 永远返回 null ⇒ 下一圈 `championScore: 0` ⇒ **冠军地板永不生效** | 跑两圈，看第二圈的 `championScore`：旧版恒为 `0`，且 `championDir` 不被用于 act 的起点 | ✅ 正则接受绝对路径；并新增"冠军打底"（`actBaseAbs`）——否则每圈都从 `baseline/` 重来，**没有累积** |
-| 4 | **产物写到工作区之外**、无法入账 | 子代理按**自己的 cwd** 解析相对路径 ⇒ 候选落在 `/private/tmp/...` | 跑一圈后 `ls <工作区>/runs/` 为空，而 `/tmp` 下多出 `candidate-*` | ✅ 双保险：引擎回传 `candidateAbs` + 提示词用绝对路径 + 插件侧**吸收**进 `runs/N/` |
+| 4 | **产物写到工作区之外**、无法入账 | 子代理按**自己的 cwd** 解析相对路径 ⇒ 候选落到工作区之外（实测落在系统临时目录里） | 跑一圈后 `ls <工作区>/runs/` 为空，而系统临时目录下多出 `candidate-*` | ✅ 双保险：引擎回传 `candidateAbs` + 提示词用绝对路径 + 插件侧**吸收**进 `runs/N/` |
 
 > ⚠️ **3 与 4 的因果链值得单独记住**：「相对路径正则 ⇒ 选不出冠军 ⇒ `championScore` 恒 0 ⇒ 地板永不触发」。
 > 这条链在日志里**完全看不出来**——每圈都有分、有判决、有 ledger 记录，只是**从不参照前任冠军**。
