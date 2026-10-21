@@ -1,10 +1,11 @@
 {
   "name": "@vlln/evo-engineering",
   "description": "进化工程（Evolution Engineering）：把 RSI 变成使用 agent 的方式 —— /evo 命令 + evo_* 工具（evo_init/evo_round/evo_status/evo_rollback），基于官方 workflow 引擎的 propose→act→critique→select→regression 回合协议，便携 evo skill 随包分发。",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "main": "./src/index.mjs",
+  "icon": "./icon.svg",
   "exports": {
     ".": "./src/index.mjs",
     "./cordis.patch.yml": "./cordis.patch.yml",
@@ -20,6 +21,7 @@
     "skills",
     "docs",
     "cordis.patch.yml",
+    "icon.svg",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
