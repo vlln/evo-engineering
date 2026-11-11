@@ -13,7 +13,8 @@
     "./workflow/evo-round.mjs": "./workflow/evo-round.mjs"
   },
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
   },
   "files": [
     "src",
